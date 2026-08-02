@@ -95,21 +95,19 @@ def parse_goldfr(raw: str) -> GoldFrQuote:
 
 
 def parse_aucoffre(raw: str) -> AuCoffreQuote:
-    """Extrait l'offre Napoléon 20F la moins chère de la première page triée par prix."""
+    """Choisit en priorité un Napoléon standard, livrable et stocké en France."""
     text = text_only(raw)
-    # La page publique est triée par prix croissant. On prend le premier bloc Napoléon 20F
-    # hors variantes explicitement marquées Jeton.
     blocks = re.split(r"(?=Napoléon\s+20F(?:\s|$))", text, flags=re.I)
     candidates: list[AuCoffreQuote] = []
     for block in blocks[1:]:
-        sample = block[:1200]
-        if re.match(r"Napoléon\s+20F\s*-\s*Jeton", sample, flags=re.I):
+        sample = block[:1400]
+        if re.search(r"\b(Jeton|Collector|Proof)\b", sample[:180], flags=re.I):
             continue
         price = first_match([r"([0-9][0-9\s\u202f]*[,.][0-9]{2})\s*€"], sample)
         prime = first_match([r"prime\s*:\s*([+-]?[0-9\s]+(?:[,.][0-9]+)?)\s*%"], sample)
         if price is None:
             continue
-        name_match = re.match(r"(Napoléon\s+20F(?:\s+[^€]{0,100})?)", sample, flags=re.I)
+        name_match = re.match(r"(Napoléon\s+20F(?:\s+[^€]{0,120})?)", sample, flags=re.I)
         name = re.sub(r"\s+", " ", name_match.group(1)).strip() if name_match else "Napoléon 20F"
         liv_match = re.search(r"Livrable\s*:\s*(Oui|Non)", sample, flags=re.I)
         fisc_match = re.search(r"Fiscalité\s*:\s*([^€]+?)(?:Plus de détails|[0-9][0-9\s]*[,.][0-9]{2}\s*€)", sample, flags=re.I)
@@ -117,11 +115,17 @@ def parse_aucoffre(raw: str) -> AuCoffreQuote:
         candidates.append(AuCoffreQuote(
             achat=price,
             prime=prime,
-            product_name=name[:100],
+            product_name=name[:120],
             livrable=liv_match.group(1).capitalize() if liv_match else None,
             fiscalite=re.sub(r"\s+", " ", fisc_match.group(1)).strip() if fisc_match else None,
             coffre=coffre_match.group(1).capitalize() if coffre_match else None,
         ))
     if not candidates:
         raise ValueError("aucune offre Napoléon 20F détectée")
-    return min(candidates, key=lambda q: q.achat or float("inf"))
+
+    def rank(q: AuCoffreQuote) -> tuple[int, int, float]:
+        livrable_rank = 0 if (q.livrable or "").lower() == "oui" else 1
+        france_rank = 0 if (q.coffre or "").lower() == "france" else 1
+        return livrable_rank, france_rank, q.achat or float("inf")
+
+    return min(candidates, key=rank)
