@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from urllib.parse import quote_plus
 from services.http import get_json, get_text
 from services.parsers import AuCoffreOffer, VendorQuote, parse_aucoffre_catalog, parse_godot_napoleon, parse_goldfr_napoleon
 
@@ -12,11 +11,6 @@ BINANCE_BASES = (
 TROY_OUNCE_GRAMS = 31.1034768
 GODOT_NAPOLEON_URL = "https://www.achat-or-et-argent.fr/or/20-francs-marianne-coq/17"
 GOLDFR_NAPOLEON_URL = "https://www.gold.fr/achat-or/napoleon-or-20-francs-louis-or/"
-AUCOFFRE_CATALOG_URLS = (
-    "https://www.aucoffre.com/acheter",
-    "https://www.aucoffre.com/recherche/marketing_list-5/stype-1/stype-320/produit",
-)
-
 
 @dataclass(frozen=True)
 class ProductSpec:
@@ -27,18 +21,47 @@ class ProductSpec:
     aliases: tuple[str, ...]
     liquidity_score: int
     tax_label: str
+    aucoffre_urls: tuple[str, ...]
 
 
 PRODUCTS: tuple[ProductSpec, ...] = (
-    ProductSpec("napoleon", "Napoléon 20 F", "Pièce", 5.805, ("Napoléon 20F", "Napoléon 20 F", "20 Francs Marianne Coq"), 100, "Cours légal / métal précieux"),
-    ProductSpec("suisse20", "20 F Suisse", "Pièce", 5.805, ("20 Francs Suisse", "20 F Suisse", "Vreneli"), 96, "Cours légal / métal précieux"),
-    ProductSpec("souverain", "Souverain", "Pièce", 7.3224, ("Souverain", "Sovereign"), 92, "Cours légal / métal précieux"),
-    ProductSpec("maple", "Maple Leaf 1 oz", "Pièce", 31.1035, ("Maple Leaf 1 once", "Maple Leaf 1 oz", "Maple Leaf"), 94, "Cours légal"),
-    ProductSpec("krugerrand", "Krugerrand 1 oz", "Pièce", 31.1035, ("Krugerrand 1 once", "Krugerrand 1 oz", "Krugerrand"), 95, "Cours légal"),
-    ProductSpec("philharmonique", "Philharmonique 1 oz", "Pièce", 31.1035, ("Philharmonique 1 once", "Philharmonique 1 oz", "Philharmonique"), 91, "Cours légal"),
-    ProductSpec("lingotin20", "Lingotin 20 g", "Lingotin", 20.0, ("Lingotin Or 20 grammes", "Lingotin 20 grammes", "Lingotin 20 g"), 82, "Métal précieux"),
-    ProductSpec("lingotin50", "Lingotin 50 g", "Lingotin", 50.0, ("Lingotin Or 50 grammes", "Lingotin 50 grammes", "Lingotin 50 g"), 86, "Métal précieux"),
-    ProductSpec("lingotin100", "Lingotin 100 g", "Lingotin", 100.0, ("Lingotin Or 100 grammes", "Lingotin 100 grammes", "Lingotin 100 g"), 89, "Métal précieux"),
+    ProductSpec("napoleon", "Napoléon 20 F", "Pièce", 5.805,
+                ("Napoléon 20F", "Napoléon 20 F", "20 Francs Marianne Coq"), 100,
+                "Cours légal / métal précieux",
+                ("https://www.aucoffre.com/recherche/metal-1/marketing_list-5/stype-1/produit",)),
+    ProductSpec("suisse20", "20 F Suisse", "Pièce", 5.805,
+                ("20 Francs Suisse", "20 F Suisse", "Vreneli"), 96,
+                "Cours légal / métal précieux",
+                ("https://www.aucoffre.com/recherche/metal-1/marketing_list-6/stype-5/produit",)),
+    ProductSpec("souverain", "Souverain", "Pièce", 7.3224,
+                ("Souverain Elisabeth II", "Souverain George V", "Souverain"), 92,
+                "Cours légal / métal précieux",
+                ("https://www.aucoffre.com/recherche/marketing_list-8/stype-6/produit",
+                 "https://www.aucoffre.com/recherche/stype-3/produit")),
+    ProductSpec("maple", "Maple Leaf 1 oz", "Pièce", 31.1034768,
+                ("Maple Leaf 1 once - 50 Dollars", "Maple Leaf 1 once", "Maple Leaf 1 oz"), 94,
+                "Cours légal",
+                ("https://www.aucoffre.com/recherche/marketing_list-12/stype-18/produit",)),
+    ProductSpec("krugerrand", "Krugerrand 1 oz", "Pièce", 31.1034768,
+                ("Krugerrand 1 once", "Krugerrand 1 oz"), 95,
+                "Cours légal",
+                ("https://www.aucoffre.com/recherche/marketing_list-7/stype-2/produit",)),
+    ProductSpec("philharmonique", "Philharmonique 1 oz", "Pièce", 31.1034768,
+                ("Philharmonique de Vienne 1 once - 100 Euros", "Philharmonique 1 once"), 91,
+                "Cours légal",
+                ("https://www.aucoffre.com/recherche/marketing_list-14/stype-40/produit",)),
+    ProductSpec("lingotin20", "Lingotin 20 g", "Lingotin", 20.0,
+                ("20 grammes d'or pur", "Lingotin Or 20 grammes", "Lingotin 20 grammes"), 82,
+                "Métal précieux",
+                ("https://www.aucoffre.com/recherche/metal-1/product_type-2/produit",)),
+    ProductSpec("lingotin50", "Lingotin 50 g", "Lingotin", 50.0,
+                ("50 grammes d'or pur", "Lingotin Or 50 grammes", "Lingotin 50 grammes"), 86,
+                "Métal précieux",
+                ("https://www.aucoffre.com/recherche/metal-1/product_type-2/produit",)),
+    ProductSpec("lingotin100", "Lingotin 100 g", "Lingotin", 100.0,
+                ("100 grammes d'or pur (LSP)", "100 grammes d'or pur", "Lingotin 100 grammes"), 89,
+                "Métal précieux",
+                ("https://www.aucoffre.com/recherche/metal-1/marketing_list-21/stype-80/produit",)),
 )
 
 
@@ -102,16 +125,19 @@ def load_market(errors: list[str]) -> MarketData:
 
 
 def _load_aucoffre(product: ProductSpec, errors: list[str]) -> tuple[AuCoffreOffer, ...]:
-    best: tuple[AuCoffreOffer, ...] = tuple()
-    urls = list(AUCOFFRE_CATALOG_URLS) + [f"https://www.aucoffre.com/recherche?search={quote_plus(product.label)}"]
-    for url in urls:
+    # Chaque produit utilise désormais sa propre page AuCOFFRE.
+    # La V6 interrogeait aussi la page Napoléon pour tous les boutons, ce qui
+    # produisait de fausses offres à 710,47 € sur le Souverain et les autres produits.
+    collected: dict[tuple, AuCoffreOffer] = {}
+    for url in product.aucoffre_urls:
         try:
             offers = parse_aucoffre_catalog(get_text(url), product.aliases)
-            if len(offers) > len(best):
-                best = offers
+            for offer in offers:
+                key = (offer.product_name, offer.price, offer.livrable, offer.is_lsp)
+                collected[key] = offer
         except Exception as exc:
-            errors.append(f"AuCOFFRE ({url}) : {exc}")
-    return best
+            errors.append(f"AuCOFFRE ({product.label}) : {exc}")
+    return tuple(sorted(collected.values(), key=lambda offer: offer.price))
 
 
 def load_product_snapshot(product_key: str) -> ProductSnapshot:

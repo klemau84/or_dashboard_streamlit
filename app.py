@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from services.data import PRODUCTS, ProductSnapshot, build_scenarios, load_product_snapshot
 
-st.set_page_config(page_title="Tableau de bord Or V6", page_icon="🟡", layout="wide")
+st.set_page_config(page_title="Tableau de bord Or V6.1", page_icon="🟡", layout="wide")
 
 
 def fmt(value: float | None, decimals: int = 2, suffix: str = "") -> str:
@@ -22,7 +22,7 @@ if "product_key" not in st.session_state:
 if "selected_offer_index" not in st.session_state:
     st.session_state.selected_offer_index = 0
 
-st.title("🟡 Tableau de bord Or — V6")
+st.title("🟡 Tableau de bord Or — V6.1")
 st.caption("Choisir un produit, puis comparer les offres réellement détectées et leur coût estimé hors livraison et fiscalité personnelle.")
 
 st.subheader("Choisir le produit")
@@ -94,7 +94,7 @@ if snapshot.aucoffre_offers:
         st.write(selected_offer.product_name)
         st.write(f"Fiscalité affichée : {selected_offer.fiscalite or 'ND'}")
 else:
-    st.info("Aucune offre AuCOFFRE correspondant clairement à ce produit n'a été détectée sur les pages publiques consultées.")
+    st.info("Aucune offre AuCOFFRE fiable n'a été détectée pour ce produit. Le tableau n'affiche plus une offre Napoléon par erreur.")
 
 st.divider()
 st.subheader("Comparaison du coût réel estimé")
