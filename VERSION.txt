@@ -1,2 +1,1 @@
-V5.1 - correctif import
-Tous les fichiers doivent remplacer ceux du dépôt, notamment services/data.py.
+V6 - sélection visuelle et catalogue multi-produits

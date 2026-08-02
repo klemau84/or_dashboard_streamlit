@@ -1,11 +1,9 @@
 from __future__ import annotations
 from zoneinfo import ZoneInfo
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
-from services.data import MarketSnapshot, compute_scenarios, load_snapshot
+from services.data import PRODUCTS, ProductSnapshot, build_scenarios, load_product_snapshot
 
-st.set_page_config(page_title="Tableau de bord Or V5", page_icon="🟡", layout="wide")
+st.set_page_config(page_title="Tableau de bord Or V6", page_icon="🟡", layout="wide")
 
 
 def fmt(value: float | None, decimals: int = 2, suffix: str = "") -> str:
@@ -15,131 +13,123 @@ def fmt(value: float | None, decimals: int = 2, suffix: str = "") -> str:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_data() -> MarketSnapshot:
-    return load_snapshot()
+def get_data(product_key: str) -> ProductSnapshot:
+    return load_product_snapshot(product_key)
 
 
-def bar_chart(labels, values, suffix, y_title):
-    fig = go.Figure(go.Bar(x=labels, y=values, text=[fmt(v, 2, suffix) for v in values]))
-    fig.update_traces(textposition="outside")
-    fig.update_layout(height=370, margin=dict(l=10, r=10, t=30, b=10), yaxis_title=y_title, showlegend=False)
-    return fig
+if "product_key" not in st.session_state:
+    st.session_state.product_key = PRODUCTS[0].key
+if "selected_offer_index" not in st.session_state:
+    st.session_state.selected_offer_index = 0
 
+st.title("🟡 Tableau de bord Or — V6")
+st.caption("Choisir un produit, puis comparer les offres réellement détectées et leur coût estimé hors livraison et fiscalité personnelle.")
 
-st.title("🟡 Tableau de bord Or — V5")
-st.caption("Napoléon 20 francs — coût réel, point mort et score d'investissement, hors livraison et fiscalité personnelle")
+st.subheader("Choisir le produit")
+product_cols = st.columns(3)
+for idx, product in enumerate(PRODUCTS):
+    active = st.session_state.product_key == product.key
+    label = f"{'✓ ' if active else ''}{product.label}"
+    if product_cols[idx % 3].button(label, key=f"product_{product.key}", use_container_width=True, type="primary" if active else "secondary"):
+        st.session_state.product_key = product.key
+        st.session_state.selected_offer_index = 0
+        st.rerun()
 
 with st.sidebar:
     st.header("Simulation")
     horizon_months = st.slider("Durée de conservation", 0, 60, 12, 1, format="%d mois")
-    st.subheader("Canal d'achat")
-    goldfr_commission = st.toggle("Gold.fr : achat téléphone/e-mail (+3,3 %, min. 10 €)", value=False)
-    godot_extra = st.number_input("Godot : surcharge constatée (%)", 0.0, 20.0, 0.0, 0.1)
-    goldfr_extra = st.number_input("Gold.fr : surcharge panier constatée (%)", 0.0, 20.0, 0.0, 0.1)
-    st.subheader("Hypothèse de revente")
-    godot_resale = st.number_input("Décote revente Godot (%)", 0.0, 20.0, 1.5, 0.1)
-    goldfr_resale = st.number_input("Décote revente Gold.fr (%)", 0.0, 20.0, 1.5, 0.1)
-    aucoffre_resale = st.number_input("Décote marché AuCOFFRE avant commission (%)", 0.0, 20.0, 0.0, 0.1)
-    st.caption("Les décotes de revente sont des hypothèses modifiables, faute de prix de rachat homogènes publiés en temps réel.")
+    st.subheader("Frais constatés")
+    goldfr_commission = st.toggle("Gold.fr : téléphone/e-mail (+3,3 %, min. 10 €)", value=False)
+    godot_extra = st.number_input("Godot : surcharge panier (%)", 0.0, 20.0, 0.0, 0.1)
+    goldfr_extra = st.number_input("Gold.fr : surcharge panier (%)", 0.0, 20.0, 0.0, 0.1)
+    st.caption("Les surcharges restent à zéro tant qu'elles ne sont pas réellement observées dans un panier ou un devis.")
 
 left, right = st.columns([1, 4])
 with left:
     if st.button("Actualiser", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-snapshot = get_data()
+
+snapshot = get_data(st.session_state.product_key)
 with right:
     updated = snapshot.timestamp.astimezone(ZoneInfo("Europe/Paris"))
     st.caption(f"Dernière collecte : {updated:%d/%m/%Y à %H:%M:%S} — cache 5 minutes")
+
 if snapshot.errors:
     with st.expander(f"Diagnostics ({len(snapshot.errors)})"):
         for error in snapshot.errors:
             st.warning(error)
 
-st.subheader("Marché spot")
-cols = st.columns(5)
-cols[0].metric("PAXG / USD oz", fmt(snapshot.market.paxg_usd_oz, 2, " USD"))
-cols[1].metric("EUR / USD", fmt(snapshot.market.eur_usd, 4))
-cols[2].metric("Spot EUR / oz", fmt(snapshot.market.spot_eur_oz, 2, " €"))
-cols[3].metric("Spot EUR / g", fmt(snapshot.market.spot_eur_g, 2, " €"))
-cols[4].metric("Valeur théorique 20F", fmt(snapshot.theoretical_20f_eur, 2, " €"))
+st.subheader(snapshot.product.label)
+head = st.columns(5)
+head[0].metric("Type", snapshot.product.family)
+head[1].metric("Or fin", fmt(snapshot.product.fine_gold_g, 4, " g"))
+head[2].metric("Spot EUR/g", fmt(snapshot.market.spot_eur_g, 2, " €"))
+head[3].metric("Valeur métallique", fmt(snapshot.theoretical_value, 2, " €"))
+head[4].metric("Liquidité indicative", f"{snapshot.product.liquidity_score}/100")
+st.caption(f"Fiscalité produit : {snapshot.product.tax_label}")
 st.divider()
 
-st.subheader("Offres AuCOFFRE détectées")
+st.subheader("Choisir une offre AuCOFFRE")
+selected_offer = None
 if snapshot.aucoffre_offers:
-    options = list(snapshot.aucoffre_offers)
-    labels = [f"{fmt(o.achat, 2, ' €')} — {o.etat or 'état ND'} — livrable {o.livrable or 'ND'} — {'LSP' if o.is_lsp else 'non-LSP'}" for o in options]
-    selected_index = st.selectbox("Offre utilisée dans la comparaison", range(len(options)), format_func=lambda i: labels[i])
-    selected_offer = options[selected_index]
-    offers_df = pd.DataFrame([{
-        "Prix (€)": o.achat, "Prime (%)": o.prime, "État": o.etat, "Livrable": o.livrable,
-        "Coffre": o.coffre, "Fiscalité": o.fiscalite, "LSP": "Oui" if o.is_lsp else "Non",
-        "Produit": o.product_name,
-    } for o in options[:15]])
-    st.dataframe(offers_df, hide_index=True, use_container_width=True)
+    visible = list(snapshot.aucoffre_offers[:9])
+    card_cols = st.columns(3)
+    for i, offer in enumerate(visible):
+        with card_cols[i % 3]:
+            selected = st.session_state.selected_offer_index == i
+            with st.container(border=True):
+                st.markdown(f"### {fmt(offer.price, 2, ' €')}")
+                st.write(f"Prime affichée : **{fmt(offer.premium, 2, ' %')}**")
+                st.write(f"État : **{offer.etat or 'ND'}**")
+                st.write(f"Livrable : **{offer.livrable or 'ND'}**")
+                st.write(f"Coffre : **{offer.coffre or 'ND'}**")
+                st.write(f"{'LSP' if offer.is_lsp else 'Standard'}")
+                if st.button("Sélectionnée" if selected else "Choisir", key=f"offer_{i}", use_container_width=True, type="primary" if selected else "secondary"):
+                    st.session_state.selected_offer_index = i
+                    st.rerun()
+    index = min(st.session_state.selected_offer_index, len(visible) - 1)
+    selected_offer = visible[index]
+    with st.expander("Détails de l'offre sélectionnée"):
+        st.write(selected_offer.product_name)
+        st.write(f"Fiscalité affichée : {selected_offer.fiscalite or 'ND'}")
 else:
-    selected_offer = None
-    st.warning("Aucune offre AuCOFFRE exploitable détectée.")
-
-scenarios = compute_scenarios(
-    snapshot, horizon_months, selected_offer, goldfr_commission, godot_extra, goldfr_extra,
-    godot_resale, goldfr_resale, aucoffre_resale,
-)
-valid = [s for s in scenarios if s.cost_after_horizon is not None]
-best = min(valid, key=lambda s: s.cost_after_horizon, default=None)
-best_score = max((s for s in valid if s.score is not None), key=lambda s: s.score, default=None)
+    st.info("Aucune offre AuCOFFRE correspondant clairement à ce produit n'a été détectée sur les pages publiques consultées.")
 
 st.divider()
-st.subheader("Verdict")
-metrics = st.columns(4)
-metrics[0].metric("Coût total le plus bas", f"{best.shop} — {best.scenario}" if best else "Indisponible")
-metrics[1].metric(f"Après {horizon_months} mois", fmt(best.cost_after_horizon if best else None, 2, " €"))
-metrics[2].metric("Meilleur score", f"{best_score.shop} — {best_score.scenario}" if best_score else "Indisponible")
-metrics[3].metric("Score", f"{best_score.score}/100" if best_score and best_score.score is not None else "Indisponible")
+st.subheader("Comparaison du coût réel estimé")
+scenarios = build_scenarios(snapshot, selected_offer, horizon_months, goldfr_commission, godot_extra, goldfr_extra)
 
-rows = []
-for s in scenarios:
-    rows.append({
-        "Vendeur": s.shop,
-        "Scénario": s.scenario,
-        "Prix affiché (€)": s.displayed_price,
-        "Frais achat (€)": s.purchase_fee_eur,
-        "Coût entrée (€)": s.entry_cost,
-        f"Garde {horizon_months} mois (€)": s.storage_cost,
-        f"Coût total {horizon_months} mois (€)": s.cost_after_horizon,
-        "Prime réelle entrée (%)": s.effective_premium_pct,
-        "Valeur revente estimée (€)": s.estimated_resale_value,
-        "Perte si revente immédiate (€)": s.immediate_loss,
-        "Hausse nécessaire au point mort (%)": s.break_even_rise_pct,
-        "Score /100": s.score,
-    })
-df = pd.DataFrame(rows)
-st.dataframe(df, hide_index=True, use_container_width=True)
+if not scenarios:
+    st.warning("Aucune offre comparable n'est disponible pour ce produit. La valeur métallique reste affichée comme repère.")
+else:
+    valid = [s for s in scenarios if s.total_cost is not None]
+    best = min(valid, key=lambda s: s.total_cost) if valid else None
+    best_score = max((s for s in valid if s.score is not None), key=lambda s: s.score, default=None)
+    verdict = st.columns(4)
+    verdict[0].metric("Meilleur coût", best.vendor if best else "ND")
+    verdict[1].metric(f"Après {horizon_months} mois", fmt(best.total_cost if best else None, 2, " €"))
+    verdict[2].metric("Meilleur score", best_score.vendor if best_score else "ND")
+    verdict[3].metric("Score", f"{best_score.score}/100" if best_score and best_score.score is not None else "ND")
 
-chart_rows = [s for s in valid]
-a, b = st.columns(2)
-with a:
-    st.plotly_chart(bar_chart([f"{s.shop}\n{s.scenario}" for s in chart_rows], [s.cost_after_horizon for s in chart_rows], " €", "Coût total"), use_container_width=True)
-with b:
-    scored = [s for s in chart_rows if s.break_even_rise_pct is not None]
-    st.plotly_chart(bar_chart([f"{s.shop}\n{s.scenario}" for s in scored], [s.break_even_rise_pct for s in scored], " %", "Hausse nécessaire au point mort"), use_container_width=True)
+    cards = st.columns(len(scenarios))
+    for col, scenario in zip(cards, scenarios):
+        with col:
+            with st.container(border=True):
+                st.markdown(f"### {scenario.vendor}")
+                st.caption(scenario.label)
+                st.metric("Prix affiché", fmt(scenario.displayed_price, 2, " €"))
+                st.metric("Coût d'entrée", fmt(scenario.entry_cost, 2, " €"))
+                st.metric(f"Coût total {horizon_months} mois", fmt(scenario.total_cost, 2, " €"))
+                st.metric("Prime réelle", fmt(scenario.premium_pct, 2, " %"))
+                st.metric("Point mort", fmt(scenario.point_mort_pct, 2, " %"))
+                st.metric("Score", f"{scenario.score}/100" if scenario.score is not None else "ND")
+                st.caption(scenario.note)
 
-st.subheader("Lecture des résultats")
-for s in scenarios:
-    with st.expander(f"{s.shop} — {s.scenario}"):
-        st.write(s.note)
-        if s.score is not None:
-            st.write(f"**Score : {s.score}/100** — pénalise la prime, le point mort, les frais de garde et le manque de transparence du prix final.")
+st.divider()
+with st.expander("Comprendre le calcul"):
+    st.write("Le coût d'entrée ajoute uniquement les frais publics ou les surcharges que tu actives manuellement.")
+    st.write("Pour AuCOFFRE non-LSP, la simulation applique prudemment 30 € par mois, correspondant au minimum officiel de facturation indiqué dans la version précédente du projet.")
+    st.write("Le point mort mesure la hausse du métal nécessaire pour couvrir la prime et la garde, hors livraison, fiscalité personnelle et éventuel écart de rachat.")
 
-st.error(
-    "Point important : pour une petite détention AuCOFFRE non-LSP, la V5 applique prudemment le minimum officiel de facturation de 30 € à chaque facture mensuelle. "
-    "Une seule pièce non-LSP peut donc coûter 360 € de garde sur 12 mois. Le scénario LSP n'apparaît que si l'offre détectée est réellement marquée LSP."
-)
-st.info(
-    "Le prix Gold.fr affiché ressemble à une cotation et non à un panier ferme. La commission de 3,3 % est désormais désactivée par défaut et ne s'applique que lorsque le canal téléphone/e-mail est sélectionné."
-)
-st.markdown(
-    "**Tarifs de référence :** [AuCOFFRE](https://www.aucoffre.com/acheter/tarifs-aucoffre-com) · "
-    "[Gold.fr](https://www.gold.fr/informations-sur-l-or/nous-connaitre/conditions-generales-dutilisation)"
-)
-st.caption("Comparateur indicatif. Livraison et fiscalité personnelle exclues. Vérifier le prix ferme et les conditions avant tout ordre.")
+st.caption("Comparateur indicatif. Vérifier le prix ferme, l'état exact, la livrabilité, les frais et les conditions contractuelles avant toute commande.")

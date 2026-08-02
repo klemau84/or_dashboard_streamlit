@@ -1,22 +1,20 @@
-# Tableau de bord Or — V5
+# Tableau de bord Or — V6
 
-Comparateur du Napoléon 20 francs chez Godot & Fils, Gold.fr et AuCOFFRE.com.
+## Nouveautés
 
-## Nouveautés V5
+- choix du produit par boutons visibles ;
+- neuf produits : Napoléon, 20 F Suisse, Souverain, Maple Leaf, Krugerrand, Philharmonique, lingotins 20/50/100 g ;
+- choix des offres AuCOFFRE par cartes cliquables ;
+- suppression de la grande liste déroulante et du tableau technique principal ;
+- comparaison par cartes : prix, coût d'entrée, garde, prime, point mort et score ;
+- affichage propre même lorsqu'un vendeur ou une offre ne peut pas être détecté.
 
-- liste des offres Napoléon 20F détectées chez AuCOFFRE ;
-- sélection manuelle de l'offre réellement comparable ;
-- séparation stricte entre produit LSP et non-LSP ;
-- frais AuCOFFRE : 0,5 % achat, 3 % vente ;
-- garde non-LSP modélisée à 30 € par mois pour une petite détention, conformément au minimum officiel de facturation ;
-- commission Gold.fr téléphone/e-mail désactivée par défaut ;
-- estimation de revente immédiate ;
-- perte immédiate et hausse nécessaire pour atteindre le point mort ;
-- score d'investissement sur 100 ;
-- livraison et fiscalité personnelle exclues.
+## Limite actuelle
+
+Godot et Gold.fr sont comparés automatiquement pour le Napoléon 20 F, car leurs pages publiques correspondantes sont identifiées. Pour les autres produits, la V6 recherche d'abord les offres AuCOFFRE et affiche la valeur métallique comme repère. Les autres vendeurs pourront être ajoutés produit par produit lorsque leurs URL et formats seront validés.
 
 ## Déploiement
 
-Décompresser le ZIP, remplacer les fichiers du dépôt GitHub, puis redéployer Streamlit.
+Remplacer le contenu du dépôt par les fichiers de cette archive, en conservant seulement le dossier `.git`, puis commit et push.
 
-Commit conseillé : `V5 - point mort, score et frais AuCOFFRE corrigés`
+Commit conseillé : `V6 - sélection visuelle et catalogue multi-produits`
