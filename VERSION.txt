@@ -1,0 +1,2 @@
+V5.1 - correctif import
+Tous les fichiers doivent remplacer ceux du dépôt, notamment services/data.py.
