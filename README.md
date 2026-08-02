@@ -1,20 +1,22 @@
-# Tableau de bord Or — V4
+# Tableau de bord Or — V5
 
-Comparaison du Napoléon 20 francs chez Godot & Fils, Gold.fr et AuCOFFRE.com.
+Comparateur du Napoléon 20 francs chez Godot & Fils, Gold.fr et AuCOFFRE.com.
 
-## Nouveautés V4
+## Nouveautés V5
 
-- séparation entre prix affiché et coût réel d'entrée ;
-- commission AuCOFFRE de 0,5 % intégrée ;
-- frais de garde AuCOFFRE simulés selon la durée ;
-- option LSP et minimum de facturation de 30 € ;
-- commission Gold.fr téléphone/e-mail de 3,3 % sous 5 000 €, minimum 10 €, activable ;
-- frais de revente AuCOFFRE de 3 % affichés ;
-- ajustements manuels pour les frais non publiés ou dépendant du panier ;
-- livraison exclue volontairement.
+- liste des offres Napoléon 20F détectées chez AuCOFFRE ;
+- sélection manuelle de l'offre réellement comparable ;
+- séparation stricte entre produit LSP et non-LSP ;
+- frais AuCOFFRE : 0,5 % achat, 3 % vente ;
+- garde non-LSP modélisée à 30 € par mois pour une petite détention, conformément au minimum officiel de facturation ;
+- commission Gold.fr téléphone/e-mail désactivée par défaut ;
+- estimation de revente immédiate ;
+- perte immédiate et hausse nécessaire pour atteindre le point mort ;
+- score d'investissement sur 100 ;
+- livraison et fiscalité personnelle exclues.
 
 ## Déploiement
 
-Décompresser, envoyer le contenu sur GitHub puis redéployer l'application Streamlit.
+Décompresser le ZIP, remplacer les fichiers du dépôt GitHub, puis redéployer Streamlit.
 
-Nom de commit conseillé : `V4 - intégration des coûts réels hors livraison`
+Commit conseillé : `V5 - point mort, score et frais AuCOFFRE corrigés`

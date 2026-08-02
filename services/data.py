@@ -1,9 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import ceil
 from services.http import get_json, get_text
-from services.parsers import AuCoffreQuote, GodotQuote, GoldFrQuote, parse_aucoffre, parse_godot, parse_goldfr
+from services.parsers import AuCoffreQuote, GodotQuote, GoldFrQuote, parse_aucoffre_offers, parse_godot, parse_goldfr
 
 BINANCE_BASES = (
     "https://data-api.binance.vision", "https://api-gcp.binance.com", "https://api1.binance.com",
@@ -12,10 +11,9 @@ BINANCE_BASES = (
 GODOT_URL = "https://www.achat-or-et-argent.fr/or/20-francs-marianne-coq/17"
 GOLDFR_URL = "https://www.gold.fr/achat-or/napoleon-or-20-francs-louis-or/"
 AUCOFFRE_URL = "https://www.aucoffre.com/recherche/marketing_list-5/stype-1/stype-320/produit"
-AUCOFFRE_TARIFFS_URL = "https://www.aucoffre.com/acheter/tarifs-aucoffre-com"
-GOLDFR_TERMS_URL = "https://www.gold.fr/informations-sur-l-or/nous-connaitre/conditions-generales-dutilisation"
 FINE_GOLD_20F_GRAMS = 5.805
 TROY_OUNCE_GRAMS = 31.1034768
+
 
 @dataclass(frozen=True)
 class MarketData:
@@ -24,29 +22,24 @@ class MarketData:
     spot_eur_oz: float | None
     spot_eur_g: float | None
 
-@dataclass(frozen=True)
-class FeeProfile:
-    purchase_fee_pct: float = 0.0
-    purchase_fee_min_eur: float = 0.0
-    monthly_storage_eur: float = 0.0
-    resale_fee_pct: float = 0.0
-    note: str = ""
 
 @dataclass(frozen=True)
-class VendorCost:
+class VendorScenario:
     shop: str
+    scenario: str
     displayed_price: float | None
     purchase_fee_eur: float | None
     entry_cost: float | None
     storage_cost: float | None
     cost_after_horizon: float | None
     exit_fee_pct: float
+    estimated_resale_value: float | None
+    immediate_loss: float | None
+    break_even_rise_pct: float | None
+    effective_premium_pct: float | None
+    score: int | None
     note: str
 
-@dataclass(frozen=True)
-class BestOffer:
-    shop: str
-    price: float
 
 @dataclass(frozen=True)
 class MarketSnapshot:
@@ -54,23 +47,20 @@ class MarketSnapshot:
     market: MarketData
     godot: GodotQuote
     goldfr: GoldFrQuote
-    aucoffre: AuCoffreQuote
+    aucoffre_offers: tuple[AuCoffreQuote, ...]
     theoretical_20f_eur: float | None
     errors: tuple[str, ...]
 
 
 def binance_price(symbol: str) -> float:
-    failures = []
-    for base_url in BINANCE_BASES:
+    failures: list[str] = []
+    for base in BINANCE_BASES:
         try:
-            payload = get_json(f"{base_url}/api/v3/ticker/price?symbol={symbol}", timeout=12)
-            value = float(payload["price"])
-            if value <= 0:
-                raise ValueError(f"prix invalide : {value}")
-            return value
+            payload = get_json(f"{base}/api/v3/ticker/price?symbol={symbol}")
+            return float(payload["price"])
         except Exception as exc:
-            failures.append(f"{base_url}: {exc}")
-    raise RuntimeError(f"aucun endpoint Binance disponible pour {symbol}. Détails : {' | '.join(failures)}")
+            failures.append(str(exc))
+    raise RuntimeError("; ".join(failures[-2:]))
 
 
 def load_market(errors: list[str]) -> MarketData:
@@ -102,70 +92,97 @@ def load_snapshot() -> MarketSnapshot:
         errors.append(f"Gold.fr : {exc}")
         goldfr = GoldFrQuote(None, None, None)
     try:
-        aucoffre = parse_aucoffre(get_text(AUCOFFRE_URL))
+        aucoffre_offers = parse_aucoffre_offers(get_text(AUCOFFRE_URL))
     except Exception as exc:
         errors.append(f"AuCOFFRE : {exc}")
-        aucoffre = AuCoffreQuote(None, None, None, None, None, None)
+        aucoffre_offers = tuple()
     if goldfr.once_eur is None and market.spot_eur_oz is not None:
         goldfr = GoldFrQuote(goldfr.achat, goldfr.prime, round(market.spot_eur_oz, 2))
     theoretical = round(market.spot_eur_g * FINE_GOLD_20F_GRAMS, 2) if market.spot_eur_g is not None else None
-    return MarketSnapshot(datetime.now(timezone.utc), market, godot, goldfr, aucoffre, theoretical, tuple(errors))
+    return MarketSnapshot(datetime.now(timezone.utc), market, godot, goldfr, aucoffre_offers, theoretical, tuple(errors))
 
 
-def compute_vendor_costs(
+def _score(premium: float | None, break_even: float | None, storage: float, transparency_penalty: int) -> int | None:
+    if premium is None or break_even is None:
+        return None
+    score = 100.0
+    score -= max(premium, 0) * 3.0
+    score -= max(break_even, 0) * 1.5
+    score -= min(storage / 5.0, 25.0)
+    score -= transparency_penalty
+    return max(0, min(100, round(score)))
+
+
+def _scenario(
+    shop: str,
+    scenario: str,
+    price: float | None,
+    theoretical: float | None,
+    purchase_fee_pct: float,
+    purchase_fee_min: float,
+    storage_cost: float,
+    exit_fee_pct: float,
+    resale_discount_pct: float,
+    transparency_penalty: int,
+    note: str,
+) -> VendorScenario:
+    if price is None:
+        return VendorScenario(shop, scenario, None, None, None, None, None, exit_fee_pct, None, None, None, None, None, note)
+    pct_fee = price * max(purchase_fee_pct, 0) / 100
+    purchase_fee = max(pct_fee, purchase_fee_min) if purchase_fee_pct > 0 else 0.0
+    entry = price + purchase_fee
+    total = entry + max(storage_cost, 0)
+    market_basis = theoretical if theoretical is not None else price
+    estimated_resale = market_basis * (1 - max(resale_discount_pct, 0) / 100) * (1 - max(exit_fee_pct, 0) / 100)
+    loss = total - estimated_resale
+    break_even = (total / estimated_resale - 1) * 100 if estimated_resale > 0 else None
+    premium = (entry / theoretical - 1) * 100 if theoretical else None
+    score = _score(premium, break_even, storage_cost, transparency_penalty)
+    return VendorScenario(
+        shop, scenario, round(price, 2), round(purchase_fee, 2), round(entry, 2), round(storage_cost, 2),
+        round(total, 2), exit_fee_pct, round(estimated_resale, 2), round(loss, 2),
+        round(break_even, 2) if break_even is not None else None,
+        round(premium, 2) if premium is not None else None, score, note,
+    )
+
+
+def compute_scenarios(
     snapshot: MarketSnapshot,
     horizon_months: int,
-    aucoffre_apply_minimum_invoice: bool,
-    aucoffre_lsp_free_storage: bool,
+    aucoffre_offer: AuCoffreQuote | None,
     goldfr_phone_email_commission: bool,
-    godot_extra_pct: float = 0.0,
-    goldfr_extra_pct: float = 0.0,
-) -> list[VendorCost]:
-    profiles = {
-        "Godot": FeeProfile(
-            purchase_fee_pct=max(godot_extra_pct, 0.0),
-            note="Prix web retenu. Aucun frais d'achat séparé identifié publiquement; surcharge manuelle réglable.",
-        ),
-        "Gold.fr": FeeProfile(
-            purchase_fee_pct=(3.3 if goldfr_phone_email_commission else 0.0) + max(goldfr_extra_pct, 0.0),
-            purchase_fee_min_eur=10.0 if goldfr_phone_email_commission else 0.0,
-            note="Commission téléphone/e-mail activée: 3,3 % sous 5 000 €, minimum 10 €. Désactivable si le prix final du panier l'intègre déjà.",
-        ),
-        "AuCOFFRE": FeeProfile(
-            purchase_fee_pct=0.5,
-            monthly_storage_eur=0.0 if aucoffre_lsp_free_storage else 5.0,
-            resale_fee_pct=3.0,
-            note="0,5 % à l'achat; garde 5 €/mois par tranche de 100 g. Le minimum de facturation officiel de 30 € est modélisé en option.",
-        ),
-    }
-    displayed = {
-        "Godot": snapshot.godot.achat,
-        "Gold.fr": snapshot.goldfr.achat,
-        "AuCOFFRE": snapshot.aucoffre.achat,
-    }
-    result: list[VendorCost] = []
-    for shop, price in displayed.items():
-        profile = profiles[shop]
-        if price is None:
-            result.append(VendorCost(shop, None, None, None, None, None, profile.resale_fee_pct, profile.note))
-            continue
-        pct_fee = price * profile.purchase_fee_pct / 100
-        purchase_fee = max(pct_fee, profile.purchase_fee_min_eur) if profile.purchase_fee_pct > 0 else 0.0
-        entry = price + purchase_fee
-        storage = profile.monthly_storage_eur * max(horizon_months, 0)
-        if shop == "AuCOFFRE" and storage > 0 and aucoffre_apply_minimum_invoice:
-            # Le tarif public indique un minimum de facturation de 30 €. L'app applique
-            # prudemment ce plancher à la période simulée, pas à chaque mois.
-            storage = max(storage, 30.0)
-        total = entry + storage
-        result.append(VendorCost(
-            shop=shop,
-            displayed_price=round(price, 2),
-            purchase_fee_eur=round(purchase_fee, 2),
-            entry_cost=round(entry, 2),
-            storage_cost=round(storage, 2),
-            cost_after_horizon=round(total, 2),
-            exit_fee_pct=profile.resale_fee_pct,
-            note=profile.note,
+    godot_extra_pct: float,
+    goldfr_extra_pct: float,
+    godot_resale_discount_pct: float,
+    goldfr_resale_discount_pct: float,
+    aucoffre_resale_discount_pct: float,
+) -> list[VendorScenario]:
+    scenarios: list[VendorScenario] = []
+    scenarios.append(_scenario(
+        "Godot", "Prix web", snapshot.godot.achat, snapshot.theoretical_20f_eur,
+        godot_extra_pct, 0, 0, 0, godot_resale_discount_pct, 3,
+        "Prix web + éventuelle surcharge manuelle. Aucun coût de garde si la pièce est retirée.",
+    ))
+    gold_pct = max(goldfr_extra_pct, 0) + (3.3 if goldfr_phone_email_commission else 0)
+    scenarios.append(_scenario(
+        "Gold.fr", "Cours public" + (" + canal assisté" if goldfr_phone_email_commission else ""),
+        snapshot.goldfr.achat, snapshot.theoretical_20f_eur, gold_pct,
+        10 if goldfr_phone_email_commission else 0, 0, 0, goldfr_resale_discount_pct, 8,
+        "Le cours public n'est pas garanti comme prix de panier. La commission 3,3 % n'est appliquée que si le canal téléphone/e-mail est activé.",
+    ))
+    if aucoffre_offer is not None:
+        # Tarifs officiels : 0,5 % achat, 3 % vente, garde 5 €/mois/100g et minimum de facturation 30 €.
+        # Pour une petite détention non-LSP, le plancher prudent est donc 30 € par mois facturé.
+        standard_storage = 30.0 * max(horizon_months, 0)
+        scenarios.append(_scenario(
+            "AuCOFFRE", "Standard non-LSP", aucoffre_offer.achat, snapshot.theoretical_20f_eur,
+            0.5, 0, standard_storage, 3.0, aucoffre_resale_discount_pct, 0,
+            "0,5 % à l'achat, 3 % à la vente. Garde modélisée avec le minimum officiel de facturation de 30 € par facture mensuelle.",
         ))
-    return result
+        if aucoffre_offer.is_lsp:
+            scenarios.append(_scenario(
+                "AuCOFFRE", "LSP validé chaque mois", aucoffre_offer.achat, snapshot.theoretical_20f_eur,
+                0.5, 0, 0, 3.0, aucoffre_resale_discount_pct, 0,
+                "Garde nulle uniquement pour un produit LSP et uniquement si le programme mensuel est validé. Le coût des achats mensuels requis n'est pas ajouté.",
+            ))
+    return scenarios
