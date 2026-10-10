@@ -1,11 +1,16 @@
-# Tableau de bord Or V7 — comparateur GOLD AVENUE
+# Comparateur d'or physique — V7.1
 
-V7 ajoute un comparateur à quatre vendeurs avec deux scénarios : 3 Napoléons livrés immédiatement et 10 Napoléons achetés progressivement, conservés 24 mois, puis livrés.
+Remplacez les fichiers de votre dépôt par ceux de cette archive, sans supprimer `.git`.
 
-**Important** : Les prix du nouveau comparateur sont saisis manuellement depuis les paniers ou devis des vendeurs. Les valeurs 0 ne constituent pas des prix et ne sont pas classées. Les frais de garde et livraison sont modifiables. Cela évite de présenter des cotations anciennes comme des prix actuels.
+Démarrage : `pip install -r requirements.txt` puis `streamlit run app.py`.
 
-Le module automatique V6.1 est conservé. Sa simulation de garde AuCOFFRE a été corrigée de 30 à 5 €/mois par tranche (hypothèse de base), et le plancher de facturation est explicitement indiqué comme à vérifier auprès du prestataire.
+## V7.1
+- Page de comparaison principale : quatre vendeurs identifiés, deux cartes par ligne.
+- Sélection du produit et scénario livraison / stockage.
+- Les autres offres AuCOFFRE sont reléguées aux détails.
+- Une offre non livrable ou dont la livrabilité n'est pas confirmée n'est pas présentée comme livrable.
+- GOLD AVENUE : aucun prix direct n'est inventé. Compléter le prix depuis le panier ; les prix stockés ne doivent pas être confondus avec les prix livrés.
+- Un total livré n'est calculé que si le transport est renseigné ou confirmé gratuit.
+- Frais de garde et frais de livraison restent des hypothèses configurables, et le classement est explicitement incomplet quand des données manquent.
 
-Pour GitHub Desktop : décompresser puis remplacer `app.py`, `services/data.py`, et ajouter `services/comparison.py` dans le dossier du dépôt, pas dans un sous-dossier.
-
-Commit conseillé : `V7 - comparateur GOLD AVENUE et cout complet`
+Les prix et disponibilités ne sont pas des offres fermes. Vérifiez les paniers vendeurs avant tout achat.
