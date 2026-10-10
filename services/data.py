@@ -182,7 +182,7 @@ def build_scenarios(snapshot: ProductSnapshot, selected_offer: AuCoffreOffer | N
         effective = phone_pct + goldfr_extra_pct
         rows.append(make("Gold.fr", "Cours public", snapshot.goldfr.price, effective, 0, 9, "Le cours public n'est pas forcément un prix de panier ferme."))
     if selected_offer is not None:
-        storage = 0.0 if selected_offer.is_lsp else 30.0 * max(horizon_months, 0)
+        storage = 0.0 if selected_offer.is_lsp else 5.0 * max(horizon_months, 0)
         label = "LSP" if selected_offer.is_lsp else "Standard"
         rows.append(make("AuCOFFRE", label, selected_offer.price, 0.5, storage, 6 if selected_offer.is_lsp else 12,
                          "0,5 % à l'achat. Garde nulle seulement si les conditions LSP sont réellement respectées."))

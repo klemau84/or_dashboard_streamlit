@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from services.data import PRODUCTS, ProductSnapshot, build_scenarios, load_product_snapshot
 
-st.set_page_config(page_title="Tableau de bord Or V6.1", page_icon="🟡", layout="wide")
+st.set_page_config(page_title="Tableau de bord Or V7", page_icon="🟡", layout="wide")
 
 
 def fmt(value: float | None, decimals: int = 2, suffix: str = "") -> str:
@@ -22,7 +22,7 @@ if "product_key" not in st.session_state:
 if "selected_offer_index" not in st.session_state:
     st.session_state.selected_offer_index = 0
 
-st.title("🟡 Tableau de bord Or — V6.1")
+st.title("🟡 Tableau de bord Or — V7")
 st.caption("Choisir un produit, puis comparer les offres réellement détectées et leur coût estimé hors livraison et fiscalité personnelle.")
 
 st.subheader("Choisir le produit")
@@ -129,7 +129,56 @@ else:
 st.divider()
 with st.expander("Comprendre le calcul"):
     st.write("Le coût d'entrée ajoute uniquement les frais publics ou les surcharges que tu actives manuellement.")
-    st.write("Pour AuCOFFRE non-LSP, la simulation applique prudemment 30 € par mois, correspondant au minimum officiel de facturation indiqué dans la version précédente du projet.")
+    st.write("Pour AuCOFFRE non-LSP, la simulation applique prudemment 5 € par mois pour une tranche de 100 g d’or fin, sous réserve de la facturation effective. Le plancher de facturation de 30 € et son application doivent être vérifiés auprès d’AuCOFFRE ; il n’est pas ajouté automatiquement.")
     st.write("Le point mort mesure la hausse du métal nécessaire pour couvrir la prime et la garde, hors livraison, fiscalité personnelle et éventuel écart de rachat.")
 
 st.caption("Comparateur indicatif. Vérifier le prix ferme, l'état exact, la livrabilité, les frais et les conditions contractuelles avant toute commande.")
+
+
+st.divider()
+st.header("Comparateur : GOLD AVENUE / Godot / AuCOFFRE / Gold.fr")
+st.caption("Simulation transparente avec prix à renseigner depuis les paniers vendeurs. Les champs ne sont PAS des cours en direct. Ne pas comparer une offre stockée avec une offre livrable sans vérifier la conversion.")
+from services.comparison import estimate
+
+mode = st.radio("Projet", ["3 Napoléons livrés maintenant", "10 Napoléons achetés progressivement puis livrés"], horizontal=True)
+qty = 3 if mode.startswith("3") else 10
+months = 0 if qty == 3 else 24
+st.write(f"**{qty} pièces**, **{months} mois** de conservation, **{qty * 5.8064:.2f} g** d’or fin")
+
+with st.expander("Hypothèses et frais — modifier selon les devis", expanded=True):
+    cols = st.columns(4)
+    defaults = {"GOLD AVENUE": 0.0, "Godot": 0.0, "AuCOFFRE": 0.5, "Gold.fr": 0.0}
+    vendors = {}
+    for col, name in zip(cols, defaults):
+        with col:
+            st.markdown(f"**{name}**")
+            price = st.number_input("Prix unitaire (€)", min_value=0.0, value=0.0, step=1.0, key=f"v7price_{name}", help="0 = non renseigné, exclu du classement")
+            buy = st.number_input("Frais achat (%)", min_value=0.0, max_value=30.0, value=defaults[name], step=0.1, key=f"v7buy_{name}")
+            custody = st.number_input("Garde mensuelle (€)", min_value=0.0, value=(5.0 if name == "AuCOFFRE" and months else 0.0), step=1.0, key=f"v7cust_{name}")
+            delivery = st.number_input("Livraison totale (€)", min_value=0.0, value=0.0, step=5.0, key=f"v7delivery_{name}", help="Saisir le tarif final assuré pour toutes les pièces, zéro seulement si confirmé gratuit")
+            resale = st.number_input("Rachat unitaire (€), optionnel", min_value=0.0, value=0.0, step=1.0, key=f"v7resale_{name}")
+            resale_fee = st.number_input("Frais de revente (%)", min_value=0.0, max_value=30.0, value=3.0 if name == "AuCOFFRE" else 0.0, step=0.5, key=f"v7sell_{name}")
+            vendors[name] = (price, buy, custody, delivery, resale, resale_fee)
+
+rows = []
+for name, (price, buy, custody, delivery, resale, resale_fee) in vendors.items():
+    if price <= 0:
+        continue
+    r = estimate(name, price, qty, months, buy, custody, delivery, resale if resale > 0 else None, resale_fee)
+    rows.append(r)
+if rows:
+    for r in sorted(rows, key=lambda x: x.total_delivered):
+        with st.container(border=True):
+            a,b,c,d = st.columns(4)
+            a.markdown(f"**{r.name}**")
+            b.metric("Achat frais inclus", fmt(r.purchase, 2, " €"))
+            c.metric("Garde + livraison", fmt(r.custody + r.delivery, 2, " €"))
+            d.metric("Total livré", fmt(r.total_delivered, 2, " €"))
+            if r.resale_proceeds is not None:
+                st.caption(f"Revente théorique au prix saisi : {fmt(r.resale_proceeds, 2, ' €')} net des frais de revente, avant fiscalité et frais d'expédition retour.")
+    st.caption("Le classement dépend entièrement des valeurs renseignées. Les coûts de stockage supposent un montant mensuel fixe, même en cas d'achats échelonnés. Une valeur de livraison à 0 € n'est pas une confirmation de gratuité.")
+else:
+    st.info("Renseigne au moins un prix unitaire dans les cartes ci-dessus pour comparer les coûts.")
+
+st.markdown("**Liens de vérification** : [GOLD AVENUE](https://www.goldavenue.com/fr/acheter/or/20-francs-francais-marianne-coq) · [Godot](https://www.achat-or-et-argent.fr/or/20-francs-marianne-coq/17) · [AuCOFFRE](https://www.aucoffre.com/recherche/stype-1/produit) · [Gold.fr](https://www.gold.fr/achat-or/napoleon-or-20-francs-louis-or/)")
+st.warning("GOLD AVENUE : vérifier les conditions de retrait/livraison depuis le coffre suisse et les conséquences fiscales d'une importation en France. La gratuité de garde sous un seuil ne garantit pas une livraison gratuite.")
